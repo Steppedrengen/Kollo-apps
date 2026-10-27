@@ -1,0 +1,106 @@
+<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kollo Office</title>
+<style>
+:root{color-scheme:dark light;--bg:#14171c;--card:#1e232b;--fg:#e8eaed;--mut:#9aa3af;--acc:#4fc3f7;--ok:#66bb6a;--wait:#ffb300;--err:#ef5350}
+@media(prefers-color-scheme:light){:root{--bg:#f4f5f7;--card:#fff;--fg:#1d2127;--mut:#616a76}}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;max-width:900px;margin:auto}
+h1{font-size:18px;margin:0 0 12px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:20px 0 8px}
+.card{background:var(--card);border-radius:10px;padding:12px;margin-bottom:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap}.grow{flex:1;min-width:140px}
+select,textarea,button,input{font:inherit;color:var(--fg);background:var(--bg);border:1px solid #3a414c;border-radius:8px;padding:8px}
+textarea{width:100%;box-sizing:border-box;min-height:80px;resize:vertical}
+button{background:var(--acc);color:#04202e;border:0;font-weight:600;cursor:pointer}button.sec{background:var(--bg);color:var(--fg);border:1px solid #3a414c;font-weight:400}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;margin-right:6px;background:var(--bg)}
+.ok{color:var(--ok)}.no{color:var(--mut)}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--mut)}
+.typing .dot,.reading .dot{background:var(--ok)}.waiting .dot{background:var(--wait)}
+pre{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font:13px/1.45 ui-monospace,monospace}
+small{color:var(--mut)}#msg{color:var(--err);min-height:18px;margin-top:6px}
+</style></head><body>
+<h1>Kollo Office</h1>
+<div id="prov"></div>
+<h2>Ny opgave</h2>
+<div class="card"><div class="row"><select id="agent" class="grow"></select><select id="provider" class="grow"><option value="">Model: automatisk</option><option value="openai">ChatGPT</option><option value="gemini">Gemini</option><option value="anthropic">Claude</option></select><select id="actsel" class="grow" style="display:none"></select></div>
+<textarea id="prompt" placeholder="Beskriv opgaven…" style="margin-top:8px"></textarea>
+<div class="row" style="margin-top:8px"><button id="send">Send til agent</button><button class="sec" id="clear">Ryd historik</button></div><div id="msg"></div></div>
+<h2>Agenter</h2><div id="agents"></div>
+<h2>Agent-indstillinger</h2><div id="settings"></div>
+<h2>MCP-servere</h2><div id="mcp"></div>
+<h2>MCP direkte (uden AI-model)</h2>
+<div class="card"><div class="row"><button class="sec" id="mload">Hent værktøjer</button><input id="mfilter" class="grow" placeholder="Filtrer værktøjer…" style="background:var(--bg);color:var(--fg);border:1px solid #3a414c;border-radius:8px;padding:8px"></div>
+<select id="mtool" size="8" style="width:100%;margin-top:8px"></select>
+<div id="minfo" style="margin-top:8px"></div>
+<textarea id="margs" placeholder='Parametre som JSON, fx {"entity_id":"light.stue"}' style="margin-top:8px;font-family:ui-monospace,monospace"></textarea>
+<div class="row" style="margin-top:8px"><button id="mrun">Kør værktøj</button></div><pre id="mout"></pre></div>
+<h2>Opgaver</h2><div id="tasks"></div>
+<script>
+const $=id=>document.getElementById(id);const NAMES={openai:'ChatGPT',gemini:'Gemini',anthropic:'Claude',mcp:'MCP direkte'};let CAT=[];
+const SL={idle:'pause',typing:'arbejder',reading:'læser',waiting:'kræver opmærksomhed'};
+function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
+let sigSet='';
+function post(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})}
+function syncComposer(){const st=(window.ST||{})[$('agent').value]||{};const m=st.mode==='mcp';
+ $('prompt').style.display=m?'none':'';$('provider').style.display=m?'none':'';$('actsel').style.display=m?'':'none';
+ const a=$('actsel');a.replaceChildren();(st.actions||[]).forEach((x,i)=>{const o=el('option','',x.label);o.value=i;a.append(o)});
+ if(m&&!(st.actions||[]).length)a.append(el('option','','(ingen handlinger endnu)'));
+ $('send').textContent=m?'Kør handling':'Send til agent'}
+function actionsEditor(id,st){const d=el('div');d.style.marginTop='8px';
+ (st.actions||[]).forEach((x,i)=>{const r=el('div','row');r.append(el('small','grow',x.label+' → '+x.server+'/'+x.tool+' '+JSON.stringify(x.args)));
+  const b=el('button','sec','✕');b.onclick=async()=>{await post('api/agent',{id,actions:st.actions.filter((_,j)=>j!==i)});sigSet='';poll()};r.append(b);d.append(r)});
+ const f=el('div','row');f.style.marginTop='8px';const lab=el('input');lab.placeholder='Navn, fx Klokken';lab.maxLength=30;
+ const tl=el('select');tl.className='grow';const fill=()=>{tl.replaceChildren();CAT.forEach((t,i)=>{const o=el('option','',t.server+' › '+t.name);o.value=i;tl.append(o)})};fill();
+ const ld=el('button','sec','Hent værktøjer');ld.onclick=async()=>{CAT=await(await fetch('api/mcp/tools')).json();fill()};
+ const ar=el('textarea');ar.placeholder='Parametre som JSON';ar.value='{}';ar.style.minHeight='50px';ar.style.marginTop='8px';
+ const add=el('button','','Tilføj handling');add.style.marginTop='8px';
+ add.onclick=async()=>{let args;try{args=JSON.parse(ar.value||'{}')}catch(e){alert('Ugyldig JSON');return}const t=CAT[tl.value];if(!t||!lab.value.trim()){alert('Angiv navn og vælg et værktøj');return}
+  await post('api/agent',{id,actions:(st.actions||[]).concat([{label:lab.value.trim(),server:t.server,tool:t.name,args}])});sigSet='';poll()};
+ f.append(lab,tl,ld);d.append(f,ar,add);return d}
+function buildSettings(s){
+ const office=s.agents.filter(a=>a.source==='office');
+ const sel=$('agent'),cur=sel.value;sel.replaceChildren();
+ office.forEach(a=>{const o=el('option','',a.name+' – '+a.role);o.value=a.id;sel.append(o)});if(cur)sel.value=cur;
+ window.ST=s.settings;syncComposer();
+ const box=$('settings');box.replaceChildren();
+ office.forEach(a=>{const st=s.settings[a.id];const w=el('div','card');const c=el('div','row');
+  const n=el('input');n.value=st.name;n.maxLength=20;n.className='grow';n.setAttribute('aria-label','Navn');
+  const md=el('select');[['ai','AI-model'],['mcp','MCP direkte (uden AI)']].forEach(([v,t])=>{const o=el('option','',t);o.value=v;md.append(o)});md.value=st.mode||'ai';
+  const p=el('select');[['auto','Model: automatisk'],['openai','ChatGPT'],['gemini','Gemini'],['anthropic','Claude']].forEach(([v,t])=>{const o=el('option','',t);o.value=v;p.append(o)});p.value=st.provider;
+  const l=el('label');const m=el('input');m.type='checkbox';m.checked=st.mcp;l.append(m,document.createTextNode(' MCP-værktøjer'));
+  const b=el('button','','Gem');b.onclick=async()=>{await post('api/agent',{id:a.id,name:n.value,provider:p.value,mcp:m.checked,mode:md.value});sigSet='';poll()};
+  c.append(el('small','',a.role+':'),n,md);if((st.mode||'ai')==='ai')c.append(p,l);c.append(b);w.append(c);
+  if(st.mode==='mcp')w.append(actionsEditor(a.id,st));box.append(w)})}
+function render(s){
+ const pv=$('prov');pv.replaceChildren();
+ for(const[k,v]of Object.entries(s.providers))pv.append(el('span','badge '+(v.configured?'ok':'no'),(v.configured?'● ':'○ ')+NAMES[k]+(v.configured?' ('+v.model+')':' – ingen nøgle')));
+ if(!Object.values(s.providers).some(v=>v.configured))pv.append(el('div','card','Tilføj mindst én API-nøgle under app’ens Konfiguration, og genstart app’en.'));
+ const sg=JSON.stringify(s.settings);if(sg!==sigSet){sigSet=sg;buildSettings(s)}
+ const ag=$('agents');ag.replaceChildren();
+ s.agents.forEach(a=>{const c=el('div','card '+a.status);const h=el('div');h.append(el('span','dot'),el('b','',a.name),el('small','',' · '+(a.role||'Claude Code')+' · '+(SL[a.status]||a.status)+(a.tool?' · '+(NAMES[a.tool]||a.tool):'')));c.append(h);if(a.task)c.append(el('small','',a.task));ag.append(c)});
+ const mc=$('mcp');mc.replaceChildren();
+ if(!s.mcp.length)mc.append(el('div','card','Ingen MCP-servere. Tilføj dem under app’ens Konfiguration → mcp_servers (navn + URL), og genstart app’en.'));
+ s.mcp.forEach(m=>{const c=el('div','card');c.append(el('b','',m.name),el('small','',' · '+(m.write?'læse + skrive':'kun læsning')+' · '+(m.error?('fejl: '+m.error):(m.tools===undefined?'ikke testet':m.tools+' værktøjer'))));mc.append(c)});
+ if(s.mcp.length){const b=el('button','sec','Test MCP-forbindelse');b.onclick=async()=>{b.disabled=true;await post('api/mcp/test');b.disabled=false;poll()};mc.append(b)}
+ const tk=$('tasks');tk.replaceChildren();
+ if(!s.tasks.length)tk.append(el('small','','Ingen opgaver endnu'));
+ s.tasks.forEach((t,i)=>{const c=el('div','card');const h=el('div');h.append(el('b','',t.title),el('small','',' · '+t.agent+' · '+(NAMES[t.provider]||t.provider)+' · '+({running:'kører…',done:'færdig',error:'fejl'}[t.status]||t.status)));c.append(h);
+ const body=t.status==='error'?t.error:(t.result||'');if(body){const d=document.createElement('details');d.open=t.status!=='done'||i===0;d.append(el('summary','',t.status==='error'?'Fejl':'Svar'),el('pre','',body));c.append(d)}
+ if(t.steps&&t.steps.length){const d=document.createElement('details');d.append(el('summary','','Værktøjer brugt ('+t.steps.length+')'),el('pre','',t.steps.map(x=>(x.ok?'✓ ':'✗ ')+x.tool+' '+x.args).join('\n')));c.append(d)}
+ tk.append(c)});
+}
+async function poll(){try{render(await(await fetch('api/state')).json())}catch(e){}}
+$('agent').onchange=syncComposer;
+$('send').onclick=async()=>{$('msg').textContent='';const m=((window.ST||{})[$('agent').value]||{}).mode==='mcp';const r=await post('api/tasks',m?{agent:$('agent').value,action:Number($('actsel').value)}:{agent:$('agent').value,provider:$('provider').value,prompt:$('prompt').value});
+ const j=await r.json();if(!r.ok)$('msg').textContent=j.error||'Fejl';else $('prompt').value='';poll()};
+$('clear').onclick=async()=>{await post('api/clear');poll()};
+function fillTools(){const f=$('mfilter').value.toLowerCase(),sel=$('mtool');sel.replaceChildren();
+ CAT.forEach((t,i)=>{if(f&&!(t.server+' '+t.name).toLowerCase().includes(f))return;const o=el('option','',(t.allowed?'':'🔒 ')+(t.readonly?'':'✎ ')+t.server+' › '+t.name);o.value=i;sel.append(o)})}
+$('mload').onclick=async()=>{$('mout').textContent='Henter…';try{CAT=await(await fetch('api/mcp/tools')).json();$('mout').textContent=CAT.length+' værktøjer. ✎ = kan ændre noget, 🔒 = kræver allow_write.';fillTools()}catch(e){$('mout').textContent='Fejl: '+e}};
+$('mfilter').oninput=fillTools;
+$('mtool').onchange=()=>{const t=CAT[$('mtool').value];if(!t)return;const i=$('minfo');i.replaceChildren(el('b','',t.name),el('div','',t.description||''),el('small','',t.readonly?'Kun læsning':'⚠ Kan ændre noget'));
+ const ex={};Object.entries((t.schema&&t.schema.properties)||{}).forEach(([k,v])=>{ex[k]=v.default!==undefined?v.default:(v.type==='number'||v.type==='integer'?0:v.type==='boolean'?false:'')});$('margs').value=Object.keys(ex).length?JSON.stringify(ex,null,2):'{}'};
+$('mrun').onclick=async()=>{const t=CAT[$('mtool').value];if(!t){$('mout').textContent='Vælg et værktøj';return}
+ let args;try{args=JSON.parse($('margs').value||'{}')}catch(e){$('mout').textContent='Ugyldig JSON i parametre';return}
+ if(!t.readonly&&!confirm('Dette værktøj kan ændre noget i dit system. Kør '+t.name+'?'))return;
+ $('mout').textContent='Kører…';const r=await post('api/mcp/call',{server:t.server,tool:t.name,args});const j=await r.json();
+ $('mout').textContent=r.ok?j.text:(j.error||'Fejl')};
+poll();setInterval(poll,2000);
+</script></body></html>

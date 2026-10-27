@@ -1,0 +1,37 @@
+name: "Kollo Office"
+version: "2.3.0"
+slug: claude_agents
+description: "Pixel-art AI office: agents backed by ChatGPT, Gemini and Claude, plus Claude Code hook sessions"
+arch: [aarch64, amd64, armv7]
+init: false
+startup: application
+boot: auto
+homeassistant_api: true
+ingress: true
+ingress_port: 8765
+panel_icon: mdi:office-building
+panel_title: Office
+panel_admin: true
+ports:
+  8765/tcp: 8765
+ports_description:
+  8765/tcp: "Claude Code hook endpoint (/event only, LAN only)"
+options:
+  openai_api_key: ""
+  gemini_api_key: ""
+  anthropic_api_key: ""
+  openai_model: "gpt-4o-mini"
+  gemini_model: "gemini-2.0-flash"
+  anthropic_model: "claude-sonnet-5-5"
+  mcp_servers: []
+schema:
+  openai_api_key: password?
+  gemini_api_key: password?
+  anthropic_api_key: password?
+  openai_model: str?
+  gemini_model: str?
+  anthropic_model: str?
+  mcp_servers:
+    - name: str
+      url: password
+      allow_write: bool?

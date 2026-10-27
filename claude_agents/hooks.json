@@ -1,0 +1,66 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- http://HA_IP:8765/event >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- http://HA_IP:8765/event >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- http://HA_IP:8765/event >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- http://HA_IP:8765/event >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- http://HA_IP:8765/event >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- http://HA_IP:8765/event >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
